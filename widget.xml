@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="12dp">
+    <TextView
+        android:id="@+id/w_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="GPU Dash"
+        android:textColor="#9DB4E0"
+        android:textSize="11sp" />
+    <TextView
+        android:id="@+id/w_score"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="--"
+        android:textColor="#DCE8FF"
+        android:textSize="26sp"
+        android:typeface="monospace" />
+    <TextView
+        android:id="@+id/w_info"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#9DB4E0"
+        android:textSize="12sp" />
+</LinearLayout>
