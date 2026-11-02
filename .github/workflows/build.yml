@@ -1,0 +1,36 @@
+name: Build APK
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Susun folder proyek
+        run: |
+          if [ -f app-build.gradle.kts ]; then
+            P=app/src/main/java/com/gpudash/app
+            mkdir -p $P app/src/main/res/layout app/src/main/res/xml app/src/main/res/drawable
+            mv *.kt $P/
+            mv AndroidManifest.xml app/src/main/
+            mv widget.xml app/src/main/res/layout/
+            mv widget_info.xml app/src/main/res/xml/
+            mv widget_bg.xml app/src/main/res/drawable/
+            mv app-build.gradle.kts app/build.gradle.kts
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Accept Android licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.9
+      - run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GpuDash-apk
+          path: app/build/outputs/apk/debug/*.apk
