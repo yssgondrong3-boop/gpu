@@ -1,6 +1,10 @@
 package com.gpudash.app
 
 import android.content.Intent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,14 +21,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-‎import androidx.compose.runtime.withFrameNanos
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -165,7 +168,7 @@ private fun DrawScope.txt(tm: TextMeasurer, s: String, x: Float, y: Float, size:
     drawText(r, topLeft = Offset(tx, y - r.firstBaseline))
 }
 
-private fun DrawScope.dashboard(tm: TextMeasurer, u: Ui) {
+private fun DrawScope.dashboard(tm: TextMeasurer, u: Ui, fMain: Float, fCpu: Float, fGpu: Float, sMain: Float) {
     drawRoundRect(BG, Offset.Zero, Size(380f, 610f), CornerRadius(16f))
     val tc = when { u.throttle >= 95 -> Color(0xFF3FCF6B); u.throttle >= 85 -> Color(0xFFFFB020); else -> RED }
     drawCircle(tc, 5f, Offset(24f, 24f))
@@ -173,14 +176,14 @@ private fun DrawScope.dashboard(tm: TextMeasurer, u: Ui) {
     seg(String.format(Locale.US, "%02d:%02d", u.elapsedSec / 60, u.elapsedSec % 60), 356f, 14f, 16f, 'e')
 
     val sc = if (u.scale > 0f) u.scale else 100000f
-    val f = (u.score / sc).coerceIn(0f, 1f)
+    val f = fMain
     gArc(190f, 215f, 130f, f, 10f, 180f, 180f)
     needle(190f, 215f, 130f, f, 10f, 16, 180f, 180f, true)
     for (i in 0..4) {
         val p = pt(190f, 215f, 98f, 180f + 45f * i)
         txt(tm, (sc * i / 4 / 1000f).roundToInt().toString(), p.x, p.y + 4f, 12f, SC)
     }
-    seg(fmt(u.score.toInt()), 190f, 240f, 26f, 'm')
+    seg(fmt(sMain.toInt()), 190f, 240f, 26f, 'm')
     txt(tm, "GIPS", 190f, 284f, 11f, SC)
 
     val nm = listOf("Max", "Avg", "Min")
@@ -197,14 +200,14 @@ private fun DrawScope.dashboard(tm: TextMeasurer, u: Ui) {
         txt(tm, "FPS", e2 + 2f, 366f, 10f, SC, 's')
     }
 
-    val cf = (u.coreGhz / (if (u.coreMaxGhz > 0f) u.coreMaxGhz else 3f)).coerceIn(0f, 1f)
+    val cf = fCpu
     gArc(66f, 450f, 50f, cf, 6f, 150f, 240f)
     needle(66f, 450f, 50f, cf, 6f, 8, 150f, 240f, false)
     val e3 = seg(String.format(Locale.US, "%.2f", u.coreGhz), 58f, 477f, 14f, 'm')
     txt(tm, "GHz", e3 + 2f, 488f, 10f, SC, 's')
     txt(tm, "CPU core ${u.coreIdx + 1}", 66f, 508f, 11f, SC)
 
-    val gf = (u.gpuPct / 100f).coerceIn(0f, 1f)
+    val gf = fGpu
     gArc(314f, 450f, 50f, gf, 6f, 150f, 240f)
     needle(314f, 450f, 50f, gf, 6f, 8, 150f, 240f, false)
     val e4 = seg(u.gpuPct.toString(), 308f, 477f, 14f, 'm')
@@ -264,6 +267,14 @@ fun Dashboard(vm: DashVM) {
     val ctx = LocalContext.current
     var hist by remember { mutableStateOf(false) }
 
+    val needleSpec = spring<Float>(dampingRatio = 0.72f, stiffness = 70f)
+    val scaleNow = if (ui.scale > 0f) ui.scale else 100000f
+    val fMain = animateFloatAsState((ui.score / scaleNow).coerceIn(0f, 1f), needleSpec, label = "main")
+    val fCpu = animateFloatAsState(
+        (ui.coreGhz / (if (ui.coreMaxGhz > 0f) ui.coreMaxGhz else 3f)).coerceIn(0f, 1f), needleSpec, label = "cpu")
+    val fGpu = animateFloatAsState((ui.gpuPct / 100f).coerceIn(0f, 1f), needleSpec, label = "gpu")
+    val sMain = animateFloatAsState(ui.score, tween(800, easing = FastOutSlowInEasing), label = "score")
+
     LaunchedEffect(Unit) {
         var n = 0
         var t0 = 0L
@@ -301,7 +312,9 @@ fun Dashboard(vm: DashVM) {
                 }
         ) {
             val k = size.width / 380f
-            withTransform({ scale(k, k, Offset.Zero) }) { dashboard(tm, ui) }
+            withTransform({ scale(k, k, Offset.Zero) }) {
+                dashboard(tm, ui, fMain.value, fCpu.value, fGpu.value, sMain.value)
+            }
         }
         if (hist) {
             val runs = remember { History.list(ctx) }
