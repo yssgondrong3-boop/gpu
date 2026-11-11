@@ -18,18 +18,21 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
 data class Ui(
-    val running: Boolean = false, val elapsedSec: Int = 0,
+    val running: Boolean = false, val countdown: Int = 0, val go: Boolean = false,
+    val elapsedSec: Int = 0,
     val score: Float = 0f, val scale: Float = 0f,
     val max: Int = 0, val avg: Int = 0, val min: Int = 0,
     val tMax: Int = 0, val tAvg: Int = 0, val tMin: Int = 0,
     val fMax: Int = 0, val fAvg: Int = 0, val fMin: Int = 0,
-    val throttle: Int = 100, val coreIdx: Int = 0,
-    val coreGhz: Float = 0f, val coreMaxGhz: Float = 3f,
-    val gpuPct: Int = 0, val temp: Int = 0, val fps: Int = 0
+    val throttle: Int = 100,
+    val cores: List<Float> = emptyList(), val coreMaxGhz: Float = 3f,
+    val gpuPct: Int = 0, val temp: Int = 0, val fps: Int = 0,
+    val hist: List<Float> = emptyList()
 )
 
 data class Run(
@@ -88,13 +91,14 @@ class DashVM(app: Application) : AndroidViewModel(app) {
                 val now = System.nanoTime()
                 val n = counter.get()
                 val st = _ui.value
-                val idx = st.coreIdx % Sensors.coreCount
-                val ghz = Sensors.coreFreqGhz(idx) ?: 0f
-                val mx = Sensors.coreMaxGhz(idx) ?: max(ghz, 3f)
+                val n8 = min(Sensors.coreCount, 8)
+                val cores = List(n8) { Sensors.coreFreqGhz(it) ?: 0f }
+                val mx = (0 until n8).mapNotNull { Sensors.coreMaxGhz(it) }.maxOrNull()
+                    ?: max(cores.maxOrNull() ?: 0f, 3f)
                 val temp = Sensors.cpuTemp(ctx).roundToInt()
                 val gpu = Sensors.gpuLoad()
                     ?: if (st.running) (fpsNow * 100f / refreshRate).roundToInt().coerceIn(0, 100) else 0
-                var s = st.copy(coreGhz = ghz, coreMaxGhz = mx, gpuPct = gpu, temp = temp, fps = fpsNow)
+                var s = st.copy(cores = cores, coreMaxGhz = mx, gpuPct = gpu, temp = temp, fps = fpsNow)
                 if (st.running) {
                     if (skipNext) {
                         skipNext = false
@@ -114,7 +118,8 @@ class DashVM(app: Application) : AndroidViewModel(app) {
                                 max = peak.toInt(), avg = scores.average().toInt(), min = scores[mnI].toInt(),
                                 tMax = temps[mxI].toInt(), tAvg = temps.average().toInt(), tMin = temps[mnI].toInt(),
                                 fMax = fpss[mxI], fAvg = fpss.average().roundToInt(), fMin = fpss[mnI],
-                                throttle = (100 * last5 / peak).roundToInt().coerceIn(0, 100)
+                                throttle = (100 * last5 / peak).roundToInt().coerceIn(0, 100),
+                                hist = scores.takeLast(60).toList()
                             )
                         }
                     }
@@ -122,7 +127,7 @@ class DashVM(app: Application) : AndroidViewModel(app) {
                 }
                 lastN = n
                 lastT = now
-                _ui.update { s.copy(running = it.running, coreIdx = it.coreIdx) }
+                _ui.update { s.copy(running = it.running, countdown = it.countdown, go = it.go) }
                 if (tick % 5 == 0) DashWidget.refresh(ctx)
             }
         }
@@ -136,9 +141,24 @@ class DashVM(app: Application) : AndroidViewModel(app) {
 
     fun onFps(f: Int) { fpsNow = f }
 
-    fun nextCore() = _ui.update { it.copy(coreIdx = (it.coreIdx + 1) % Sensors.coreCount) }
-
-    fun toggle() { if (_ui.value.running) stopRun() else startRun() }
+    /** Ketuk START: hitung mundur 3-2-1 dengan suara starter, lalu GO dan tes dimulai. */
+    fun toggle() {
+        val u = _ui.value
+        if (u.running) { stopRun(); return }
+        if (u.countdown > 0 || u.go) return
+        viewModelScope.launch {
+            Sound.crank()
+            for (n in 3 downTo 1) {
+                _ui.update { it.copy(countdown = n) }
+                delay(1000)
+            }
+            _ui.update { it.copy(countdown = 0, go = true) }
+            Sound.rev()
+            delay(700)
+            _ui.update { it.copy(go = false) }
+            startRun()
+        }
+    }
 
     private fun startRun() {
         synchronized(lock) { scores.clear(); temps.clear(); fpss.clear() }
@@ -161,7 +181,8 @@ class DashVM(app: Application) : AndroidViewModel(app) {
         }
         _ui.update {
             it.copy(running = true, scale = 0f, score = 0f, max = 0, avg = 0, min = 0,
-                tMax = 0, tAvg = 0, tMin = 0, fMax = 0, fAvg = 0, fMin = 0, throttle = 100, elapsedSec = 0)
+                tMax = 0, tAvg = 0, tMin = 0, fMax = 0, fAvg = 0, fMin = 0, throttle = 100,
+                elapsedSec = 0, hist = emptyList())
         }
     }
 
